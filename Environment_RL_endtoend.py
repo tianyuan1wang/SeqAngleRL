@@ -10,6 +10,20 @@ import numpy as np
 
 import astra
 import math
+import argparse
+import importlib
+
+# parser = argparse.ArgumentParser(description='Experiments parameters in environment')
+
+# parser.add_argument('--Source', choices=['SimulationData.Circle_phantom', 'SimulationData.Ellipse_phantom', 'SimulationData.Triangle_phantom', 'SimulationData.Mixed_phantom'], default='SimulationData.Mixed_phantom',
+#                         help='Choose the dataset')
+
+# args = parser.parse_args()
+# data_name = args.Source.replace('.py', '')
+
+# # module.my_function(args.Mixed_phantom)
+# dataset = importlib.import_module(data_name)
+
 
 from SimulationData.Mixed_phantom import *
 
@@ -50,16 +64,20 @@ def angle_range(N_a):
     return np.linspace(0,np.pi,N_a,False)
 
 
+# the starting point for calculating the number of angles
 a_start = 0
 
+# settings for reconstruction
 image_size = 128
 proj_size = int(1.5*image_size)
 vol_geom = astra.create_vol_geom(image_size, image_size)
 n_iter_sirt = 150
 
-
+# the total number of angles we considered
 N_a = 180
 angles = angle_range(N_a)
+
+# the size of the training set
 len_p = len(P_all)
 
 class env():
@@ -72,28 +90,30 @@ class env():
     def step(self, action):
         
        
-        # Execute action on environment 
+        # The current number of angles 
         self.a_start += 1
             
-        # Wait for environment to transition to next state
+        # Find which angle is selected and store it together with previous selected angles
         self.angle_action = angles[action]
         
             
         self.angles_seq.append(self.angle_action)
         
+        
+        # Use all selected angles to do reconstruction using SIRT as a belief state
         self.state = reconstruction_noise(P_all[self.n], self.angles_seq, proj_size, vol_geom, n_iter_sirt)
        
         # Get reward for new state
-        self.reward, self.previous_action  = self._get_reward(self.angles_seq)
+        self.reward  = self._get_reward(self.angles_seq)
       
-       
+        # Calculate the total rewards
         self.total_reward += self.reward
         
             
-        self.criteria = psnr(P_all[self.n], self.state)
+        # self.criteria = psnr(P_all[self.n], self.state)
         
         
-        
+        # The stop criteria depends on the number of angles; if the criteria is reached, go another round 
         if self.a_start > 6:
             # self.n = np.random.randint(0,4)
             self.a_start = 0
@@ -107,39 +127,36 @@ class env():
            
     
     def reset(self):
+        # select a phantom from the training set randomly
         self.n = np.random.randint(0,len_p)
-       
+        # set the starting number of angles
         self.a_start = a_start
         
-        self.curr_iteration = 0
-              
+        # self.curr_iteration = 0
+        # initial total rewards      
         self.total_reward = 0.0
+        # list to store the selected angles
         self.angles_seq = []
         
-        #Default initialization for action
-        self.previous_action=0 
+        # initialization for action
         self.previous_reward = 0
-        self.action=self.previous_action
        
         self.reward = 0
         
         self.done=False 
         #self.n = 0
         
-        
+        # set a zero matrix as the first reconstruction or belief state
         self.state = np.zeros((128,128))
-        self.criteria = 0
+        # self.criteria = 0
         
         return self.state
     
     def _get_reward(self,angles_seq):
-        
-        
+        # calculate the psnr value for the current reconstruction
         self.current_reward = psnr(P_all[self.n], self.state)
         
-        d = self.current_reward - self.previous_reward
-        self.previous_reward = self.current_reward
-        
+        # end-to-end reward setting
         if self.a_start > 6:
             reward = self.current_reward
         else:
@@ -150,4 +167,4 @@ class env():
         
       
         
-        return reward,self.previous_action
+        return reward

@@ -17,40 +17,75 @@ import random
 
 import numpy as np
 
+import argparse
+import importlib
+
+# import subprocess
+
+# Create an ArgumentParser object
+parser = argparse.ArgumentParser(description='Experiments parameters in main')
 
 
-from Environment_RL_endtoend import *
+parser.add_argument('--NUM_EPISODES', type=int, default=300000,
+                        help='the number of training episodes')
+
+parser.add_argument('--GAMMA', type=float, default=0.99,
+                        help='discount for RL')
+
+parser.add_argument('--LR', type=float, default=1e-4,
+                        help='learning rate')
+
+parser.add_argument('--WD', type=float, default=1e-5,
+                        help='weight decay')
 
 
-NUM_EPISODES = 300000
+parser.add_argument('--Environment', type=str, default='Environment_RL_endtoend.py', choices=['Environment_RL_endtoend.py', 'Environment_RL_increment.py'],
+                        help='the choice of the environment')
+
+parser.add_argument('--Note', type=str, default='mix', 
+                        help='name for saving')
 
 
 
-env = env()
+args = parser.parse_args()
 
-total_rewards = []
-A = []
+
+
+
+
+
+module_name = args.Environment.replace('.py', '')
+
+# module.my_function(args.Mixed_phantom)
+module = importlib.import_module(module_name)
+
+
+
+env = module.env()
+
+
 device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 
-P_A = []
-NUM = []
 
-
-GAMMA = 0.99
+note = args.Note
 
 
 
-episode_rewards = []
-A = []
-P_A = []
-P_S = []
+# episode_rewards = []
+# A = []
+# P_A = []
+# P_S = []
 
-NUM = []
-E = []
-P_N = []
-STATE = []
-NUM_A = []
-note = 'mix'
+# NUM = []
+# E = []
+# P_N = []
+# STATE = []
+# NUM_A = []
+
+# total_rewards = []
+# A = []
+# P_A = []
+# NUM = []
 
 
 
@@ -123,114 +158,125 @@ class ActorCritic(nn.Module):
         return dist, value
 
   
-    
-    
-INPUT_DIM = image_size
-HIDDEN_DIM = 4*INPUT_DIM + 1
+def main():
+    # set parameters for network
+    INPUT_DIM = module.image_size
+    HIDDEN_DIM = 4*INPUT_DIM + 1
 
-OUTPUT_DIM = N_a
-HIDDEN_DIM_1 = N_a
+    OUTPUT_DIM = module.N_a
+    HIDDEN_DIM_1 = module.N_a
 
-model = ActorCritic(INPUT_DIM, HIDDEN_DIM, HIDDEN_DIM_1, OUTPUT_DIM).to(device)
-optimizer = optim.Adam(model.parameters(), lr=1e-4, weight_decay=1e-5)
+    model = ActorCritic(INPUT_DIM, HIDDEN_DIM, HIDDEN_DIM_1, OUTPUT_DIM).to(device)
+    optimizer = optim.Adam(model.parameters(), lr=args.LR, weight_decay=args.WD)
 
 
 
-for e in range(NUM_EPISODES):
-    state = env.reset()
-    state_a = np.array([[0]*N_a])
+    for e in range(args.NUM_EPISODES):
+        # reset the environment and the action vector
+        state = env.reset()
+        state_a = np.array([[0]*module.N_a])
  
    
     
-    
-    score = 0
-    a_episode = []
-    log_probs = []
-    values = []
-    rewards = []
-    masks = []
-    returns = []
-    angle_prob = []
-    Num_P = []
-    e_change = []
-    S = []
-    p_n = []
-    p_s = []
-    num_angles = 0
+        # track the total rewards
+        score = 0
+        # a_episode = []
+        # log_probs = []
+        # values = []
+        # rewards = []
+        # masks = []
+        # returns = []
+        # angle_prob = []
+        # Num_P = []
+        # e_change = []
+        # S = []
+        # p_n = []
+        # p_s = []
    
   
-    while True:
+        while True:
+            # outputs from Actor-Critic model based on the current reconstruction
+            dist, value = model(state, state_a)
+            # Sample action from the output probability distribution
+            action = dist.sample()
+            # log-trick to cumpute the gradient on policy
+            log_prob = dist.log_prob(action)
+            # compute the entropy
+            entropy = dist.entropy().mean()
+            angle_dist = dist.probs.detach().cpu().numpy()
+            # angle_prob.append(angle_dist)
+            
+            
+            # outputs from the environment after selecting an angles
+            next_state, reward, done, _, c_r, n = env.step(action.item())
         
-        dist, value = model(state, state_a)
-        action = dist.sample()
-        log_prob = dist.log_prob(action)
-        entropy = dist.entropy().mean()
-        angle_dist = dist.probs.detach().cpu().numpy()
-        angle_prob.append(angle_dist)
-        
-        next_state, reward, done, _, c_r, n = env.step(action.item())
-        num_angles += 1
-        
+            # update the action vector
+            state_a[0][action] = 1
        
-        state_a[0][action] = 1
-       
-     
-        next_dist, next_value = model(next_state, state_a)
+            # outputs from Actor-Critic model based on the next reconstruction
+            next_dist, next_value = model(next_state, state_a)
         
-        advantage = reward + (1-done)*GAMMA*next_value - value
+            # compute the temperal difference as an approximation of the advantage function
+            advantage = reward + (1-done)* args.GAMMA*next_value - value
+            
+            # compute the different losses with weights
+            actor_loss = -(log_prob * advantage.detach())
+            critic_loss = advantage.pow(2).mean()
         
-        actor_loss = -(log_prob * advantage.detach())
-        critic_loss = advantage.pow(2).mean()
-        
-        loss = actor_loss + 0.5 * critic_loss - 0.01 * entropy
+            loss = actor_loss + 0.5 * critic_loss - 0.01 * entropy
     
-        optimizer.zero_grad()
-        loss.backward()
-        optimizer.step()
+            optimizer.zero_grad()
+            loss.backward()
+            optimizer.step()
        
         
-        a_episode.append(action.item())
-        Num_P.append(n)
+            # a_episode.append(action.item())
+            # Num_P.append(n)
       
-        e_change.append(entropy.item())
+            # e_change.append(entropy.item())
         
-        score += reward
+            score += reward
         
-        state = next_state
+            state = next_state
         
-        if NUM_EPISODES - e <= 200:
-            S.append(state)
-            p_n.append(env.n)
+            # if args.NUM_EPISODES - e <= 200:
+            #     S.append(state)
+            #     p_n.append(env.n)
 
         
-        if done:
-            break
+            if done:
+                break
         
-    A.append(a_episode)    
-    P_A.append(angle_prob)
-    discounted_reward = 0
-    NUM.append(Num_P)
-    E.append(e_change)
-    STATE.append(S)
-    P_N.append(p_n)
-    # P_S.append(p_s)
-    NUM_A.append(num_angles)
+        # A.append(a_episode)    
+        # P_A.append(angle_prob)
+        # discounted_reward = 0
+        # NUM.append(Num_P)
+        # E.append(e_change)
+        # STATE.append(S)
+        # P_N.append(p_n)
+        # P_S.append(p_s)
+        # NUM_A.append(num_angles)
     
-    if e % 100 == 0:
-        print("episode", e)
-        print("score", score, "entropy", entropy.item())
+        if e % 100 == 0:
+            print("episode", e)
+            print("score", score, "entropy", entropy.item())
     
-    if e % 1000 == 0:
-        torch.save(model.state_dict(), 'actor_critic_{}_{}'.format(e, note))
+        if e % 1000 == 0:
+            torch.save(model.state_dict(), 'actor_critic_{}_{}'.format(e, note))
     
         
-    episode_rewards.append(score)
+        # episode_rewards.append(score)
   
     
-np.save("episode_rewards_{}_{}.npy".format(NUM_EPISODES, note),episode_rewards)
-np.save("P_A_{}_{}.npy".format(NUM_EPISODES, note),P_A)
-np.save("Num_P_{}_{}.npy".format(NUM_EPISODES, note), NUM)    
-np.save("Actions_{}_{}.npy".format(NUM_EPISODES, note),A)  
-np.save("States_{}_{}.npy".format(NUM_EPISODES, note),STATE)  
-np.save("PN_{}_{}.npy".format(NUM_EPISODES, note),P_N)  
-np.save("Num_A_{}_{}.npy".format(NUM_EPISODES, note), NUM_A)    
+    # np.save("episode_rewards_{}_{}.npy".format(args.NUM_EPISODES, note),episode_rewards)
+    # np.save("P_A_{}_{}.npy".format(args.NUM_EPISODES, note),P_A)
+    # np.save("Num_P_{}_{}.npy".format(args.NUM_EPISODES, note), NUM)    
+    # np.save("Actions_{}_{}.npy".format(args.NUM_EPISODES, note),A)  
+    # np.save("States_{}_{}.npy".format(args.NUM_EPISODES, note),STATE)  
+    # np.save("PN_{}_{}.npy".format(args.NUM_EPISODES, note),P_N)  
+    # np.save("Num_A_{}_{}.npy".format(args.NUM_EPISODES, note), NUM_A)    
+    
+    
+if __name__ == '__main__':
+    main()
+    
