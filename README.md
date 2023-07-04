@@ -17,7 +17,7 @@ The repository has the following structure:
 
 ## Getting Started
 Clone the repository: <br />
-```git clone https://github.com/tianyuan1wang/SeqAngleRL.git```
+```git clone https://github.com/tianyuan1wang/SeqAngleRL.git```<br />
 Use environment.yml to set up the whole environment.
 
 ## Running the Code
