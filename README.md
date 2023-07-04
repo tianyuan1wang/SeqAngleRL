@@ -16,9 +16,10 @@ The repository has the following structure:
 * Actor-Critic.py: This file contains the implementation of the encoder network and the main function. The main function is responsible for computing the gradient on the policy and updating the networks, following the actor-critic reinforcement learning algorithm.
 
 ## Getting Started
-Clone the repository: 'git clone https://github.com/tianyuan1wang/SeqAngleRL.git'
+Clone the repository: 
+'''git clone https://github.com/tianyuan1wang/SeqAngleRL.git'''
 Use environment.yml to set up the whole environment.
 
 ## Running the Code
 Run the following command with hyperparameter settings in the terminal. You can change the values after these hyperparameters.
-'python Actor_Critic.py --NUM_EPISODES 300000 --GAMMA 0.99 --LR 0.0001 --WD 0.00001 --Environment Environment_RL_endtoend.py --Note mix'
+'''python Actor_Critic.py --NUM_EPISODES 300000 --GAMMA 0.99 --LR 0.0001 --WD 0.00001 --Environment Environment_RL_endtoend.py --Note mix'''
