@@ -10,7 +10,9 @@ SeqAngleRL develops a framework for sequential experimental design in X-ray CT u
 ![End-to-end reward performance in mixed phantoms](Images/Mix_results.png)  
 *Figure 1: Sample results illustrating the personalized strategies learned by the Actor-Critic policy for mixed phantoms under the end-to-end reward setting. The first two selected angles are fixed to $137^{\\circ}$ and $46^{\\circ}$ for the hexagon and triangle, respectively, while for the pentagon, they are $137^{\\circ}$ and $65^{\\circ}$. Color encodes the selection order.*
 
-![Training outcomes for modified Shepp-Logan phantoms](Images/Shepp_fill.png)  
+<p align="center">
+  <img src="Images/Shepp_fill.png" width="80%"/>
+</p>
 *Figure 2: Illustration of personalized strategies learned by the Actor-Critic policy for modified Shepp-Logan phantoms under the end-to-end reward setting. Two groups are shown based on angle counts: a) five angles; b) nineteen angles. The first two rows present distinct phantom instances. Red lines highlight the agent’s a-posteriori adaptation to ellipse rotations.*
 
 ## Repository Structure
