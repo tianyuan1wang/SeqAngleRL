@@ -13,23 +13,11 @@ import math
 import argparse
 import importlib
 
+from PhantomGenerator import PhantomGenerator
 
-
-    
-# parser = argparse.ArgumentParser(description='Experiments parameters in environment')
-
-# parser.add_argument('--Source', choices=['SimulationData.Circle_phantom', 'SimulationData.Ellipse_phantom', 'SimulationData.Triangle_phantom', 'SimulationData.Mixed_phantom'], default='Mixed_phantom',
-#                         help='Choose the dataset')
-
-# args = parser.parse_args()
-# data_name = args.Source.replace('.py', '')
-
-# # module.my_function(args.Mixed_phantom)
-# dataset = importlib.import_module(data_name)
-
-from SimulationData.Mixed_phantom import *
-
-
+# Generate your phantoms
+gen = PhantomGenerator()
+P_all = gen.generate_mixed(n_samples=3000)
 
 
 def reconstruction_noise(P, proj_angles, proj_size, vol_geom, n_iter_sirt, percentage=0.0):
@@ -65,28 +53,29 @@ def angle_range(N_a):
     return np.linspace(0,np.pi,N_a,False)
 
 
-# the starting number of angles
-a_start = 0
 
-# settings for reconstruction
-image_size = 128
-proj_size = int(1.5*image_size)
-vol_geom = astra.create_vol_geom(image_size, image_size)
-n_iter_sirt = 150
-
-# the total number of angles we considered
-N_a = 180
-angles = angle_range(N_a)
-
-# the size of the training set
-len_p = len(P_all)
 class env():
     
-    def __init__(self):
-        self.n = np.random.randint(0,len_p)
+    def __init__(self, num_angles, reward_mode, image_size, action_size):
+        # Select phantom index
+        self.n = np.random.randint(0,len(P_all))
         self.criteria = 0
+        # Total number of angles for this experiment
+        self.num_angles = num_angles
+        # Reward mode: increment or endtoend
+        self.reward_mode = reward_mode
+        # Image size 
+        self.image_size = image_size
+        # The size of action space
+        self.action_size = action_size
+        # Parameters for astra
+        self.proj_size = int(1.5*self.image_size)
+        self.vol_geom = astra.create_vol_geom(self.image_size, self.image_size)
+        self.angles = angle_range(self.action_size)
+        self.n_iter_sirt = 150
+        self.init_start = 0
+
  
-        
     def step(self, action):
         
        
@@ -94,16 +83,19 @@ class env():
         self.a_start += 1
             
         # Find which angle is selected and store it together with previous selected angles
-        self.angle_action = angles[action]
+        self.angle_action = self.angles[action]
         
             
         self.angles_seq.append(self.angle_action)
         
         # Use all selected angles to do reconstruction using SIRT as a belief state
-        self.state = reconstruction_noise(P_all[self.n], self.angles_seq, proj_size, vol_geom, n_iter_sirt)
+        self.state = reconstruction_noise(P_all[self.n], self.angles_seq, self.proj_size, self.vol_geom, self.n_iter_sirt)
        
         # Get reward for new state
-        self.reward  = self._get_reward(self.angles_seq)
+        if self.reward_mode == "increment":
+            self.reward  = self._get_reward_increm()
+        elif self.reward_mode == "endtoend":
+            self.reward = self._get_reward_end()
       
         # Calculate the total rewards
         self.total_reward += self.reward
@@ -113,9 +105,9 @@ class env():
         
         
         # The stop criteria depends on the number of angles; if the criteria is reached, go another round 
-        if self.a_start > 6:
+        if self.a_start > self.num_angles:
             # self.n = np.random.randint(0,4)
-            self.a_start = 0
+            self.a_start = self.init_start
             self.angles_seq = []
             self.done = True
          
@@ -126,9 +118,9 @@ class env():
            
     
     def reset(self):
-        self.n = np.random.randint(0,len_p)
+        self.n = np.random.randint(0,len(P_all))
        
-        self.a_start = a_start
+        self.a_start = self.init_start
         
         self.curr_iteration = 0
               
@@ -149,7 +141,7 @@ class env():
         
         return self.state
     
-    def _get_reward(self,angles_seq):
+    def _get_reward_increm(self,):
         # calculate the psnr value for the current reconstruction
         self.current_reward = psnr(P_all[self.n], self.state)
         
@@ -159,7 +151,16 @@ class env():
         
      
         self.previous_action=self.angles_seq[-1]
-        
-      
+
+        return reward
+
+    def _get_reward_end(self,):
+        # calculate the psnr value for the current reconstruction
+        self.current_reward = psnr(P_all[self.n], self.state)   
+        # end-to-end reward setting
+        if self.a_start > self.num_angles:
+            reward = self.current_reward
+        else:
+            reward = 0
         
         return reward

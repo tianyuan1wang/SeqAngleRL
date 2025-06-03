@@ -12,14 +12,11 @@ import torch.nn.functional as F
 from torch.distributions import Categorical
 import torch.optim as optim 
 
-import os
-import random
-
 import numpy as np
 
 import argparse
-import importlib
 
+from Environment_RL import *
 # import subprocess
 
 # Create an ArgumentParser object
@@ -28,6 +25,13 @@ parser = argparse.ArgumentParser(description='Experiments parameters in main')
 
 parser.add_argument('--NUM_EPISODES', type=int, default=300000,
                         help='the number of training episodes')
+
+parser.add_argument('--NUM_ANGLES', type=int, default=6,
+                        help='the number of angles')
+
+parser.add_argument('--REWARD_MODE', type=str, default='endtoend',
+                        help='increment or endtoend')
+
 
 parser.add_argument('--GAMMA', type=float, default=0.99,
                         help='discount for RL')
@@ -38,12 +42,15 @@ parser.add_argument('--LR', type=float, default=1e-4,
 parser.add_argument('--WD', type=float, default=1e-5,
                         help='weight decay')
 
-
-parser.add_argument('--Environment', type=str, default='Environment_RL_endtoend.py', choices=['Environment_RL_endtoend.py', 'Environment_RL_increment.py'],
-                        help='the choice of the environment')
-
 parser.add_argument('--Note', type=str, default='mix', 
                         help='name for saving')
+
+
+parser.add_argument('--IMAGE_SIZE', type=int, default=128,
+                        help='the size of image')
+
+parser.add_argument('--ACTION_SIZE', type=int, default=180,
+                        help='the size of action space')
 
 
 
@@ -52,40 +59,13 @@ args = parser.parse_args()
 
 
 
-
-
-module_name = args.Environment.replace('.py', '')
-
-# module.my_function(args.Mixed_phantom)
-module = importlib.import_module(module_name)
-
-
-
-env = module.env()
+env = env(args.NUM_ANGLES, args.REWARD_MODE, args.IMAGE_SIZE, args.ACTION_SIZE)
 
 
 device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 
 
 note = args.Note
-
-
-
-# episode_rewards = []
-# A = []
-# P_A = []
-# P_S = []
-
-# NUM = []
-# E = []
-# P_N = []
-# STATE = []
-# NUM_A = []
-
-# total_rewards = []
-# A = []
-# P_A = []
-# NUM = []
 
 
 
@@ -128,19 +108,26 @@ class ActorCritic(nn.Module):
                
                 nn.MaxPool2d(kernel_size=4))             
         
-        
+        # Dynamically determine conv output size
+        self.conv_output_dim = self._get_conv_output_dim(input_shape=(1, input_dim, input_dim))
+                
         
         self.actor = nn.Sequential(
-                                  nn.Linear(768+hidden_dim_1, output_dim),
+                                  nn.Linear(self.conv_output_dim+hidden_dim_1, output_dim),
                                   nn.Softmax(dim=-1))
         
        
         
         self.critic = nn.Sequential(
-                                    nn.Linear(768+hidden_dim_1, 768+hidden_dim_1),
+                                    nn.Linear(self.conv_output_dim+hidden_dim_1, self.conv_output_dim+hidden_dim_1),
                                     nn.ReLU(),
-                                    nn.Linear(768+hidden_dim_1, 1))
-        
+                                    nn.Linear(self.conv_output_dim+hidden_dim_1, 1))
+
+    def _get_conv_output_dim(self, input_shape):
+        dummy_input = torch.zeros(1, *input_shape)
+        out = self.conv1(dummy_input)
+        return out.view(1, -1).size(1)
+    
     def forward(self,state, state_a):
         state = torch.from_numpy(state).float().squeeze().to(device)
         state = state.unsqueeze(0)
@@ -160,11 +147,11 @@ class ActorCritic(nn.Module):
   
 def main():
     # set parameters for network
-    INPUT_DIM = module.image_size
+    INPUT_DIM = args.IMAGE_SIZE
     HIDDEN_DIM = 4*INPUT_DIM + 1
 
-    OUTPUT_DIM = module.N_a
-    HIDDEN_DIM_1 = module.N_a
+    OUTPUT_DIM = args.ACTION_SIZE
+    HIDDEN_DIM_1 = args.ACTION_SIZE
 
     model = ActorCritic(INPUT_DIM, HIDDEN_DIM, HIDDEN_DIM_1, OUTPUT_DIM).to(device)
     optimizer = optim.Adam(model.parameters(), lr=args.LR, weight_decay=args.WD)
@@ -174,25 +161,13 @@ def main():
     for e in range(args.NUM_EPISODES):
         # reset the environment and the action vector
         state = env.reset()
-        state_a = np.array([[0]*module.N_a])
+        state_a = np.array([[0]*args.ACTION_SIZE])
  
    
     
         # track the total rewards
         score = 0
-        # a_episode = []
-        # log_probs = []
-        # values = []
-        # rewards = []
-        # masks = []
-        # returns = []
-        # angle_prob = []
-        # Num_P = []
-        # e_change = []
-        # S = []
-        # p_n = []
-        # p_s = []
-   
+        
   
         while True:
             # outputs from Actor-Critic model based on the current reconstruction
@@ -230,32 +205,16 @@ def main():
             optimizer.step()
        
         
-            # a_episode.append(action.item())
-            # Num_P.append(n)
-      
-            # e_change.append(entropy.item())
         
             score += reward
         
             state = next_state
         
-            # if args.NUM_EPISODES - e <= 200:
-            #     S.append(state)
-            #     p_n.append(env.n)
-
-        
+            
             if done:
                 break
         
-        # A.append(a_episode)    
-        # P_A.append(angle_prob)
-        # discounted_reward = 0
-        # NUM.append(Num_P)
-        # E.append(e_change)
-        # STATE.append(S)
-        # P_N.append(p_n)
-        # P_S.append(p_s)
-        # NUM_A.append(num_angles)
+        
     
         if e % 100 == 0:
             print("episode", e)
@@ -265,17 +224,7 @@ def main():
             torch.save(model.state_dict(), 'actor_critic_{}_{}'.format(e, note))
     
         
-        # episode_rewards.append(score)
-  
-    
-    # np.save("episode_rewards_{}_{}.npy".format(args.NUM_EPISODES, note),episode_rewards)
-    # np.save("P_A_{}_{}.npy".format(args.NUM_EPISODES, note),P_A)
-    # np.save("Num_P_{}_{}.npy".format(args.NUM_EPISODES, note), NUM)    
-    # np.save("Actions_{}_{}.npy".format(args.NUM_EPISODES, note),A)  
-    # np.save("States_{}_{}.npy".format(args.NUM_EPISODES, note),STATE)  
-    # np.save("PN_{}_{}.npy".format(args.NUM_EPISODES, note),P_N)  
-    # np.save("Num_A_{}_{}.npy".format(args.NUM_EPISODES, note), NUM_A)    
-    
+      
     
 if __name__ == '__main__':
     main()
